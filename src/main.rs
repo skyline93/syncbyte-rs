@@ -1,45 +1,14 @@
-use std::io::Error;
-use std::{os::unix::process::CommandExt, process::Command};
+pub mod backend;
+pub mod source;
 
-struct Options<'a> {
-    host: &'a str,
-    port: u16,
-    user: &'a str,
-    password: &'a str,
-    db_name: &'a str,
-}
-
-impl<'a> Options<'a> {
-    fn to_uri(&self) -> String {
-        format!(
-            "postgresql://{}:{}@{}:{}/{}",
-            self.user, self.password, self.host, self.port, self.db_name
-        )
-    }
-}
-
-struct Postgres<'a> {
-    options: &'a Options<'a>,
-    version: &'a str,
-}
-
-impl<'a> Postgres<'a> {
-    fn new(opts: &'a Options<'a>, version: &'a str) -> Self {
-        Postgres {
-            options: opts,
-            version: version,
-        }
-    }
-
-    fn dump(&self, dest_file: &str) -> Error {
-        Command::new("pg_dump")
-            .args([self.options.to_uri().as_str(), "-Fc", "-f", dest_file])
-            .exec()
-    }
-}
+use crate::backend::s3;
+use crate::source::postgres;
+use std::process::exit;
 
 fn main() {
-    let opts = Options {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    let opts = postgres::Options {
         host: "127.0.0.1",
         port: 5432,
         user: "syncbyte",
@@ -47,8 +16,29 @@ fn main() {
         db_name: "syncbyte",
     };
 
-    let pg = Postgres::new(&opts, "14.5");
+    let pg = postgres::Postgres::new(&opts, "14.5");
     let err = pg.dump("core_cms");
 
-    println!("{}", err)
+    match err {
+        Ok(_) => (),
+        Err(msg) => {
+            println!("error: {}", msg);
+            exit(1)
+        }
+    }
+
+    let s3_opts = s3::Options {
+        endpoint: "http://127.0.0.1:9000",
+        access_key: "accesskey123",
+        secret_key: "secretkey123",
+        region: "",
+    };
+
+    let bak = s3::S3::new(rt, &s3_opts, "syncbyte");
+    match bak.put("core_cms") {
+        Ok(msg) => {
+            println!("{}", msg)
+        }
+        Err(_) => exit(1),
+    };
 }
