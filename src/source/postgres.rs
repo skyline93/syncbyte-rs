@@ -1,6 +1,5 @@
-use std::io::{Error, ErrorKind};
-use std::process::Output;
-use std::{os::unix::process::CommandExt, process::Command};
+use crate::source::{Error, SourceError};
+use std::process::{Command, ExitStatus};
 
 pub struct Options<'a> {
     pub host: &'a str,
@@ -32,11 +31,26 @@ impl<'a> Postgres<'a> {
         }
     }
 
-    pub fn dump(&self, dest_file: &str) -> Result<Output, Error> {
-        let err = Command::new("pg_dump")
+    pub fn dump(&self, dest_file: &str) -> Result<(), SourceError> {
+        let result = Command::new("pg_dump")
             .args([self.options.to_uri().as_str(), "-Fc", "-f", dest_file])
             .output();
 
-        err
+        let output = match result {
+            Ok(output) => output,
+            Err(e) => {
+                return Err(SourceError::CommandError(Error {
+                    message: e.to_string(),
+                }))
+            }
+        };
+
+        if let Some(0) = ExitStatus::code(&output.status) {
+            return Ok(());
+        };
+
+        Err(SourceError::DumpError(Error {
+            message: String::from_utf8(output.stderr).unwrap(),
+        }))
     }
 }

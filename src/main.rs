@@ -6,8 +6,6 @@ use crate::source::postgres;
 use std::process::exit;
 
 fn main() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-
     let opts = postgres::Options {
         host: "127.0.0.1",
         port: 5432,
@@ -17,15 +15,17 @@ fn main() {
     };
 
     let pg = postgres::Postgres::new(&opts, "14.5");
-    let err = pg.dump("core_cms");
 
-    match err {
+    match pg.dump("core_cms1") {
         Ok(_) => (),
-        Err(msg) => {
-            println!("error: {}", msg);
+        Err(e) => {
+            match e {
+                source::SourceError::DumpError(e) => println!("{}", e),
+                source::SourceError::CommandError(_) => (),
+            };
             exit(1)
         }
-    }
+    };
 
     let s3_opts = s3::Options {
         endpoint: "http://127.0.0.1:9000",
@@ -34,8 +34,7 @@ fn main() {
         region: "",
     };
 
-    let bak = s3::S3::new(rt, &s3_opts, "syncbyte");
-    match bak.put("core_cms") {
+    match s3::S3::new(&s3_opts, "syncbyte").put("core_cms1") {
         Ok(msg) => {
             println!("{}", msg)
         }

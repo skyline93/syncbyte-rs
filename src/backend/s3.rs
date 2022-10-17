@@ -9,6 +9,7 @@ use http::Uri;
 use tokio::runtime::Runtime;
 
 pub enum S3Error {
+    PathError,
     PutError,
 }
 
@@ -26,7 +27,12 @@ pub struct S3<'a> {
 }
 
 impl<'a> S3<'a> {
-    pub fn new(rt: Runtime, options: &Options, bucket: &'a str) -> Self {
+    pub fn new(options: &Options, bucket: &'a str) -> Self {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
         let sdk_config = rt.block_on(
             aws_config::from_env()
                 .configure(ProviderConfig::default().with_env(Env::from_slice(&[
@@ -51,25 +57,25 @@ impl<'a> S3<'a> {
     }
 
     async fn put_object(&self, filename: &str) -> Result<String, crate::s3::S3Error> {
-        let result = ByteStream::from_path(Path::new(filename)).await;
-        let body = match result {
-            Ok(bs) => bs,
-            Err(_) => return Err(crate::s3::S3Error::PutError),
+        let body = match ByteStream::from_path(Path::new(filename)).await {
+            Ok(b) => b,
+            Err(_) => return Err(crate::s3::S3Error::PathError),
         };
 
-        let result = self
+        let output = match self
             .client
             .put_object()
             .bucket(self.bucket)
             .key(filename)
             .body(body)
             .send()
-            .await;
+            .await
+        {
+            Ok(output) => output,
+            Err(_) => return Err(crate::s3::S3Error::PathError),
+        };
 
-        match result {
-            Ok(msg) => Ok(format!("put object successful, message: {:?}", msg)),
-            Err(_) => Err(crate::s3::S3Error::PutError),
-        }
+        Ok(format!("put object successful, output: {:?}", output))
     }
 
     pub fn put(&self, filename: &str) -> Result<String, crate::s3::S3Error> {
