@@ -14,7 +14,7 @@ fn main() {
         db_name: "syncbyte",
     };
 
-    let pg = postgres::Postgres::new(&opts, "14.5");
+    let pg = postgres::Postgres::new(&opts);
 
     match pg.dump("core_cms1") {
         Ok(_) => (),
@@ -38,6 +38,12 @@ fn main() {
         Ok(msg) => {
             println!("{}", msg)
         }
-        Err(_) => exit(1),
+        Err(e) => {
+            match e {
+                backend::S3Error::PathError(e) => println!("{}", e),
+                backend::S3Error::PutError(e) => println!("{}", e),
+            }
+            exit(1)
+        }
     };
 }

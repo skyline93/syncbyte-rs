@@ -20,14 +20,14 @@ impl<'a> Options<'a> {
 
 pub struct Postgres<'a> {
     options: &'a Options<'a>,
-    version: &'a str,
+    // version: &'a str,
 }
 
 impl<'a> Postgres<'a> {
-    pub fn new(opts: &'a Options<'a>, version: &'a str) -> Self {
+    pub fn new(opts: &'a Options<'a>) -> Self {
         Postgres {
             options: opts,
-            version: version,
+            // version: version,
         }
     }
 

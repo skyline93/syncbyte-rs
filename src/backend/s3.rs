@@ -1,17 +1,14 @@
+use std::fs;
 use std::path::Path;
 use std::str::FromStr;
 
+use crate::backend::{Error, S3Error};
 use aws_config::provider_config::ProviderConfig;
 use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::{config::Builder, Client, Endpoint as SdkEndpoint};
 use aws_types::os_shim_internal::Env;
 use http::Uri;
 use tokio::runtime::Runtime;
-
-pub enum S3Error {
-    PathError,
-    PutError,
-}
 
 pub struct Options<'a> {
     pub endpoint: &'a str,
@@ -57,9 +54,16 @@ impl<'a> S3<'a> {
     }
 
     async fn put_object(&self, filename: &str) -> Result<String, crate::s3::S3Error> {
+        let metadata = fs::metadata(filename).unwrap();
+        let size = metadata.len();
+
         let body = match ByteStream::from_path(Path::new(filename)).await {
-            Ok(b) => b,
-            Err(_) => return Err(crate::s3::S3Error::PathError),
+            Ok(body) => body,
+            Err(e) => {
+                return Err(S3Error::PathError(Error {
+                    message: e.to_string(),
+                }))
+            }
         };
 
         let output = match self
@@ -72,10 +76,18 @@ impl<'a> S3<'a> {
             .await
         {
             Ok(output) => output,
-            Err(_) => return Err(crate::s3::S3Error::PathError),
+            Err(e) => {
+                return Err(S3Error::PutError(Error {
+                    message: e.to_string(),
+                }))
+            }
         };
 
-        Ok(format!("put object successful, output: {:?}", output))
+        Ok(format!(
+            "put object successful, size: {}, etag: {}",
+            size,
+            output.e_tag.unwrap()
+        ))
     }
 
     pub fn put(&self, filename: &str) -> Result<String, crate::s3::S3Error> {
